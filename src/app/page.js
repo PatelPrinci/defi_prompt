@@ -52,24 +52,53 @@ export default function Home() {
 
   // Parses prompt like "send 0.00013 ETH to 0xabc123..."
   const parseTransferPrompt = (prompt) => {
-    const regex = /send\s+([\d\.]+)\s*eth\s+to\s+(0x[a-fA-F0-9]{40})/i
-    const match = prompt.match(regex)
+    const regex = /(?:send|transfer|please send|please transfer)\s+([\d\.]+)\s*eth(?:ereum)?\s+to(?:\s+the\s+address)?\s*(0x[a-fA-F0-9]{40})/ig
+    const match = regex.exec(prompt)
     if (!match) return null
     return { amount: match[1], toAddress: match[2] }
   }
-
+  
   const handlePromptEnter = async (prompt) => {
-    const parsed = parseTransferPrompt(prompt)
-    if (!parsed) {
-      return 'Invalid prompt format. Use: send <amount> ETH to <address>'
+    const res = await fetch('/api/openai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    })
+  
+    const data = await res.json()
+    if (!res.ok) {
+      return `Error simplifying prompt: ${data.error || 'Unknown error'}`
     }
+  
+    const simplified = data.simplifiedPrompt.trim()
+  
+    const transferRegex = /(?:send|transfer|please send|please transfer)\s+([\d\.]+)\s*eth(?:ereum)?\s+(?:to\s+address|to)?\s*(0x[a-fA-F0-9]{40})/i
+    if (!transferRegex.test(simplified)) {
+      return `Could not recognize a valid transfer command in: "${simplified}"`
+    }
+  
+    const parsed = parseTransferPrompt(simplified)
+  
     try {
       await sendETHusingContract(parsed.toAddress, parsed.amount)
-      return `Transfer of ${parsed.amount} ETH to ${parsed.toAddress} initiated. Check your wallet or transaction explorer for status.`
+      return `Transfer of ${parsed.amount} ETH to ${parsed.toAddress} initiated.`
     } catch (e) {
       return `Transfer failed: ${e.message || e}`
     }
   }
+  
+  // const handlePromptEnter = async (prompt) => {
+  //   const parsed = parseTransferPrompt(prompt)
+  //   if (!parsed) {
+  //     return 'Invalid prompt format. Use: send <amount> ETH to <address>'
+  //   }
+  //   try {
+  //     await sendETHusingContract(parsed.toAddress, parsed.amount)
+  //     return `Transfer of ${parsed.amount} ETH to ${parsed.toAddress} initiated. Check your wallet or transaction explorer for status.`
+  //   } catch (e) {
+  //     return `Transfer failed: ${e.message || e}`
+  //   }
+  // }
 
   return (
     <div style={{ padding: 50, maxWidth: 600, margin: '0 auto', fontFamily: 'Arial, sans-serif' }}>
