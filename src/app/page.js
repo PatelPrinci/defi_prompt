@@ -1,103 +1,127 @@
-import Image from "next/image";
+'use client'
+
+import { useState } from 'react'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { useAccount, useWriteContract } from 'wagmi'
+import { isAddress, parseEther } from 'ethers'
+import ChatPrompt from '../components/ChatPrompt'
+import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../config/contracts'
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const { address, isConnected } = useAccount()
+  const { writeContractAsync, isPending, error } = useWriteContract()
+  const [toAddress, setToAddress] = useState('')
+  const [ethAmount, setEthAmount] = useState('')
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+  const sendETHusingContract = async (to, amount) => {
+    if (!isConnected) {
+      alert('Please connect your wallet first!')
+      return
+    }
+    if (!to || !amount) {
+      alert('Invalid address or amount')
+      return
+    }
+    if (!isAddress(to)) {
+      alert('Invalid recipient address')
+      return
+    }
+
+    let weiAmount
+    try {
+      weiAmount = parseEther(amount)
+    } catch {
+      alert('Invalid ETH amount format')
+      return
+    }
+    try {
+      const tx = await writeContractAsync({
+        address: CONTRACT_ADDRESS,
+        abi: CONTRACT_ABI,
+        functionName: 'transferEth',
+        args: [to, weiAmount],
+      })
+      console.log('Transaction sent:', tx)
+      alert(`Transfer complete! Tx hash: ${tx.hash || tx}`)
+    } catch (e) {
+      console.error('Transfer failed:', e)
+      alert(`Transfer failed: ${e.message || e}`)
+      throw e
+    }
+  }
+
+  // Parses prompt like "send 0.00013 ETH to 0xabc123..."
+  const parseTransferPrompt = (prompt) => {
+    const regex = /send\s+([\d\.]+)\s*eth\s+to\s+(0x[a-fA-F0-9]{40})/i
+    const match = prompt.match(regex)
+    if (!match) return null
+    return { amount: match[1], toAddress: match[2] }
+  }
+
+  const handlePromptEnter = async (prompt) => {
+    const parsed = parseTransferPrompt(prompt)
+    if (!parsed) {
+      return 'Invalid prompt format. Use: send <amount> ETH to <address>'
+    }
+    try {
+      await sendETHusingContract(parsed.toAddress, parsed.amount)
+      return `Transfer of ${parsed.amount} ETH to ${parsed.toAddress} initiated. Check your wallet or transaction explorer for status.`
+    } catch (e) {
+      return `Transfer failed: ${e.message || e}`
+    }
+  }
+
+  return (
+    <div style={{ padding: 50, maxWidth: 600, margin: '0 auto', fontFamily: 'Arial, sans-serif' }}>
+      <h1>ETH Transfer Platform</h1>
+
+      <ConnectButton />
+
+      {isConnected && <p>Connected Wallet: {address}</p>}
+
+      <div style={{ marginTop: 20, marginBottom: 10 }}>
+        <label>Recipient Address:</label>
+        <input
+          type='text'
+          value={toAddress}
+          onChange={(e) => setToAddress(e.target.value)}
+          placeholder='0xabc123...'
+          style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #ccc', fontSize: 16, marginTop: 6 }}
+        />
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <label>Amount (ETH):</label>
+        <input
+          type='text'
+          value={ethAmount}
+          onChange={(e) => setEthAmount(e.target.value)}
+          placeholder='0.00013'
+          style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #ccc', fontSize: 16, marginTop: 6 }}
+        />
+      </div>
+
+      <button
+        onClick={() => sendETHusingContract(toAddress, ethAmount)}
+        disabled={isPending}
+        style={{
+          padding: '12px 24px',
+          backgroundColor: '#FF9800',
+          color: 'white',
+          border: 'none',
+          borderRadius: 8,
+          cursor: isPending ? 'not-allowed' : 'pointer',
+          fontSize: 16,
+          width: '100%'
+        }}
+      >
+        {isPending ? 'Sending...' : 'Send ETH'}
+      </button>
+
+      {error && <p style={{ color: 'red' }}>{error.message}</p>}
+
+      {/* Chatbox style prompt input */}
+      <ChatPrompt onEnter={handlePromptEnter} />
     </div>
-  );
+  )
 }
