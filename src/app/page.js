@@ -57,7 +57,7 @@ export default function Home() {
     if (!match) return null
     return { amount: match[1], toAddress: match[2] }
   }
-
+//handle prompt
   const handlePromptEnter = async (prompt) => {
     const parsed = parseTransferPrompt(prompt)
     if (!parsed) {
